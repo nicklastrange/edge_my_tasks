@@ -1,0 +1,594 @@
+openapi: 3.0.3
+info:
+  title: Task & Event Management API
+  version: 1.0.0
+
+servers:
+- url: /api
+
+paths:
+
+  ##############################
+  # EVENT MANAGEMENT (ADMIN)
+  ##############################
+
+  /events:
+    get:
+      summary: Get all events
+      tags: [Events]
+      description: Retrieve all events from the system
+      responses:
+        '200':
+          description: List of all events
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/EventDto'
+
+    post:
+      summary: Create new event
+      tags: [Events]
+      description: Admin creates an event. Tasks will be generated for groups/employees assigned to the event.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EventCreateRequest'
+      responses:
+        '201':
+          description: Event created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EventDto'
+
+  /events/{eventId}/participants-status:
+    get:
+      summary: Get tasks for an event grouped by status
+      tags: [Events]
+      description: Returns three lists of tasks for the event: pending (NEW), done (DONE), rejected (REJECTED).
+      parameters:
+        - name: eventId
+          in: path
+          required: true
+          description: Unique identifier of the event
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Grouped tasks by status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EventTasksStatusDto'
+        '404':
+          description: Event not found
+
+  ##############################
+  # USER TASKS
+  ##############################
+
+  /tasks:
+    get:
+      summary: Get tasks assigned to current user
+      tags: [Tasks]
+      parameters:
+      - name: X-User-Id
+        in: header
+        required: true
+        schema:
+          type: string
+        description: User ID for authentication
+      responses:
+        '200':
+          description: List of tasks
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TaskDto'
+
+  /tasks/{taskId}/done:
+    post:
+      summary: Mark task as done
+      tags: [Tasks]
+      parameters:
+      - name: taskId
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Task completed
+
+  /tasks/{taskId}/reject:
+    post:
+      summary: Reject a task
+      tags: [Tasks]
+      parameters:
+      - name: taskId
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Task rejected
+
+  ##############################
+  # USER MANAGEMENT SETTINGS
+  ##############################
+
+  /users/me/categories/blacklist:
+    get:
+      summary: Get user's category blacklist
+      tags: [User Settings]
+      parameters:
+      - name: X-User-Id
+        in: header
+        required: true
+        schema:
+          type: string
+        description: User ID for authentication
+      responses:
+        '200':
+          description: List of blacklisted categories
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Category'
+
+    put:
+      summary: Replace user's category blacklist
+      tags: [User Settings]
+      parameters:
+      - name: X-User-Id
+        in: header
+        required: true
+        schema:
+          type: string
+        description: User ID for authentication
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                $ref: '#/components/schemas/Category'
+      responses:
+        '200':
+          description: Updated blacklist
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Category'
+
+  /users/me/notification-channels:
+    get:
+      summary: Get user's notification channels
+      tags: [User Settings]
+      parameters:
+      - name: X-User-Id
+        in: header
+        required: true
+        schema:
+          type: string
+        description: User ID for authentication
+      responses:
+        '200':
+          description: Notification channels
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/NotificationChannel'
+
+    put:
+      summary: Replace user's notification channels
+      tags: [User Settings]
+      parameters:
+      - name: X-User-Id
+        in: header
+        required: true
+        schema:
+          type: string
+        description: User ID for authentication
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                $ref: '#/components/schemas/NotificationChannel'
+      responses:
+        '200':
+          description: Updated notification channels
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/NotificationChannel'
+
+  ##############################
+  # STATISTICS
+  ##############################
+
+  /stats:
+    get:
+      summary: Get system statistics
+      tags: [Statistics]
+      description: |
+        Zwraca zagregowane statystyki zadań i aktywności użytkowników.
+        Pola:
+        - overallDonePercentage: % wszystkich zadań zakończonych (DONE)
+        - overallRejectedPercentage: % wszystkich zadań odrzuconych (REJECTED)
+        - pendingPercentage: % zadań oczekujących (NEW)
+        - expiringSoonPercentage: % zadań NEW z deadline w przedziale 0..expiringHours
+        - categoryRates: lista procentów wykonania / odrzucenia per kategoria
+        - alertEmployees: lista ID pracowników z zaległymi zadaniami (deadline < now, status NEW)
+        - totalDeliveredNotifications: suma wysłanych powiadomień (agregat z deliveredNotifications)
+        - totalUniqueClicks: suma unikalnych kliknięć w actionUrl
+        - averageCompletionHours: średni czas w godzinach od utworzenia do DONE
+        - channelEffectiveness: skuteczność kanałów (completionRate)
+        - channelPreferences: rozkład preferencji kanałów wśród pracowników
+      parameters:
+        - name: expiringHours
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+            maximum: 168
+            default: 24
+          description: Liczba godzin w przód używana do oznaczenia zadań jako "expiring soon" (domyślnie 24, max 7 dni = 168h).
+      responses:
+        '200':
+          description: Statystyki systemowe
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatsResponse'
+              examples:
+                sample:
+                  value:
+                    overallDonePercentage: 62.5
+                    overallRejectedPercentage: 5.0
+                    pendingPercentage: 32.5
+                    expiringSoonPercentage: 10.0
+                    categoryRates:
+                      - category: SECURITY
+                        donePercentage: 80.0
+                        rejectedPercentage: 5.0
+                        total: 40
+                        done: 32
+                        rejected: 2
+                      - category: GENERAL
+                        donePercentage: 50.0
+                        rejectedPercentage: 10.0
+                        total: 20
+                        done: 10
+                        rejected: 2
+                    alertEmployees: ["emp123", "emp789"]
+                    totalDeliveredNotifications: 250
+                    totalUniqueClicks: 140
+                    averageCompletionHours: 36.2
+                    channelEffectiveness:
+                      - channel: EMAIL
+                        completionRate: 70.0
+                        tasks: 100
+                      - channel: SMS
+                        completionRate: 60.0
+                        tasks: 50
+                    channelPreferences:
+                      - channel: EMAIL
+                        percentage: 40.0
+                        employees: 200
+                      - channel: WHATSAPP
+                        percentage: 25.0
+                        employees: 125
+                      - channel: SMS
+                        percentage: 20.0
+                        employees: 100
+                      - channel: MS_TEAMS
+                        percentage: 15.0
+                        employees: 75
+                    activeTasksCount: 130
+                    overdueTasksCount: 15
+                    completionPercentage: 67.5
+                    activeEmployeesCount: 500
+        '400':
+          description: Nieprawidłowy parametr expiringHours (poza zakresem)
+        '500':
+          description: Wewnętrzny błąd serwera przy liczeniu statystyk
+
+components:
+
+  ##################################
+  # ENUMS
+  ##################################
+
+  schemas:
+
+    Category:
+      type: string
+      enum:
+      - SECURITY
+      - SALES
+      - GENERAL
+      - PARTY
+      - ONBOARDING
+      - TRAINING
+      - HR
+      - IT
+      - COMPLIANCE
+
+    GroupEnum:
+      type: string
+      enum:
+      - UoP
+      - SALES
+      - BACKOFFICE
+      - B2B
+      - DEV
+      - QA
+
+    NotificationChannel:
+      type: string
+      enum:
+      - EMAIL
+      - SMS
+      - WHATSAPP
+      - MS_TEAMS
+
+    ##################################
+    # DOCUMENTS (Mongo)
+    ##################################
+
+    EventDto:
+      type: object
+      properties:
+        id:
+          type: string
+          nullable: true
+        category:
+          $ref: '#/components/schemas/Category'
+        title:
+          type: string
+        description:
+          type: string
+          nullable: true
+        groups:
+          type: array
+          items:
+            $ref: '#/components/schemas/GroupEnum'
+      required: [category, title, groups]
+
+    EventCreateRequest:
+      type: object
+      properties:
+        category:
+          $ref: '#/components/schemas/Category'
+        title:
+          type: string
+        description:
+          type: string
+          nullable: true
+        groups:
+          type: array
+          items:
+            $ref: '#/components/schemas/GroupEnum'
+          default: []
+      required: [category, title, groups]
+
+    TaskDto:
+      type: object
+      properties:
+        id:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        deadline:
+          type: string
+          format: date-time
+          nullable: true
+        event:
+          $ref: '#/components/schemas/EventDto'
+        status:
+          type: string
+          enum: [NEW, DONE, REJECTED]
+        actionUrl:
+          type: string
+          nullable: true
+        employeeId:
+          type: string
+      required: [createdAt, event, status, employeeId]
+
+    EmployeeDocument:
+      type: object
+      properties:
+        id:
+          type: string
+        firstName:
+          type: string
+        lastName:
+          type: string
+        categoriesBlacklist:
+          type: array
+          items:
+            $ref: '#/components/schemas/Category'
+        groups:
+          type: array
+          items:
+            $ref: '#/components/schemas/GroupEnum'
+        position:
+          type: string
+        notificationChannels:
+          type: array
+          items:
+            $ref: '#/components/schemas/NotificationChannel'
+
+    ParticipantTaskDto:
+      type: object
+      properties:
+        id:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        deadline:
+          type: string
+          format: date-time
+          nullable: true
+        status:
+          type: string
+          enum: [NEW, DONE, REJECTED]
+        event:
+          $ref: '#/components/schemas/EventDto'
+        actionUrl:
+          type: string
+          nullable: true
+        employeeFirstName:
+          type: string
+        employeeLastName:
+          type: string
+
+    ##################################
+    # STATISTICS SCHEMAS
+    ##################################
+
+    StatsResponse:
+      type: object
+      properties:
+        overallDonePercentage:
+          type: number
+          format: double
+        overallRejectedPercentage:
+          type: number
+          format: double
+        pendingPercentage:
+          type: number
+          format: double
+        expiringSoonPercentage:
+          type: number
+          format: double
+        categoryRates:
+          type: array
+          items:
+            $ref: '#/components/schemas/CategoryCompletionRate'
+        alertEmployees:
+          type: array
+          items:
+            type: string
+        totalDeliveredNotifications:
+          type: integer
+          format: int64
+        totalUniqueClicks:
+          type: integer
+          format: int64
+        averageCompletionHours:
+          type: number
+          format: double
+          nullable: true
+        channelEffectiveness:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChannelEffectiveness'
+        channelPreferences:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChannelPreferenceSlice'
+        activeTasksCount:
+          type: integer
+          format: int64
+          description: Liczba aktywnych zadań (status NEW)
+        overdueTasksCount:
+          type: integer
+          format: int64
+          description: Liczba zaległych zadań (status NEW po deadline)
+        completionPercentage:
+          type: number
+          format: double
+          description: (DONE + REJECTED) / total * 100
+        activeEmployeesCount:
+          type: integer
+          format: int64
+          description: Aktualna liczba pracowników w bazie
+
+    CategoryCompletionRate:
+      type: object
+      properties:
+        category:
+          $ref: '#/components/schemas/Category'
+        donePercentage:
+          type: number
+          format: double
+        rejectedPercentage:
+          type: number
+          format: double
+        total:
+          type: integer
+          format: int64
+        done:
+          type: integer
+          format: int64
+        rejected:
+          type: integer
+          format: int64
+
+    ChannelEffectiveness:
+      type: object
+      properties:
+        channel:
+          $ref: '#/components/schemas/NotificationChannel'
+        completionRate:
+          type: number
+          format: double
+        tasks:
+          type: integer
+          format: int64
+
+    ChannelPreferenceSlice:
+      type: object
+      properties:
+        channel:
+          $ref: '#/components/schemas/NotificationChannel'
+        percentage:
+          type: number
+          format: double
+        employees:
+          type: integer
+          format: int64
+
+    EventTasksStatusDto:
+      type: object
+      description: Tasks for an event grouped by status (pending=NEW, done=DONE, rejected=REJECTED) with employee names.
+      properties:
+        pending:
+          type: array
+          items:
+            $ref: '#/components/schemas/ParticipantTaskDto'
+        done:
+          type: array
+          items:
+            $ref: '#/components/schemas/ParticipantTaskDto'
+        rejected:
+          type: array
+          items:
+            $ref: '#/components/schemas/ParticipantTaskDto'
