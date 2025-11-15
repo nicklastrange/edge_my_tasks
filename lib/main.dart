@@ -12,7 +12,7 @@ void main() {
 			routes: {
 				// map top-level routes to AppView with a role flag.
 				// By default the dashboard route shows the admin view.
-				'/dashboard': (ctx) => const AppView(isAdmin: false),
+				'/dashboard': (ctx) => const AppView(isAdmin: true),
 				// other routes can also render AppView; here we keep them simple
 				'/events': (ctx) => const CreateEventPage(),
 				'/employees': (ctx) => const EmployeeManagementPage(),

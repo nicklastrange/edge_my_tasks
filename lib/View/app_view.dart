@@ -12,6 +12,6 @@ class AppView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return isAdmin ? const AdminDashboardView() : const EmployeeHomeView(userId: "6917de6ccfc6fa31caefc5e0");
+    return isAdmin ? const AdminDashboardView() : const EmployeeHomeView(userId: "6917e7c99f233e02e82cfa4e");
   }
 }
